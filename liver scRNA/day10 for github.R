@@ -5,9 +5,55 @@ library(ggplot2)
 library(patchwork)
 library(writexl)
 
-## Read data
+## Read RAW data
+ge <- Read10X_h5(file.path("raw_feature_bc_matrix.GE.h5"))
+ac <- Read10X_h5(file.path("raw_feature_bc_matrix.HTO.h5"))$`Antibody Capture`
 
-obj <- readRDS("liver-raw.rds")
+dim(ge)
+dim(ac)
+
+
+ac <- ac[rowSums(ac>1)>1,colSums(ac>1)>1]
+ge <- ge[rowSums(ge>1)>1,colSums(ge>1)>1]
+
+cb <- intersect(colnames(ge), colnames(ac))
+ge <- ge[,cb]
+ac <- ac[,cb]
+
+
+h <- CreateSeuratObject(counts=ge) %>%
+  NormalizeData() %>%
+  FindVariableFeatures(selection.method="mean.var.plot") %>%
+  ScaleData(features=VariableFeatures(.))
+
+h[["HTO"]] <- CreateAssayObject(counts=ac)
+h <- NormalizeData(h,assay="HTO",normalization.method="CLR")
+h <- HTODemux(h,assay="HTO",positive.quantile=0.99)
+Idents(h) <- "HTO_maxID"
+saveRDS(h,"seurat-hashed.rds")
+
+
+as.data.frame(table(h$HTO_maxID)) %>%
+  setNames(c("Hashtag","Cells"))
+
+
+as.data.frame(table(h$HTO_classification.global)) %>%
+  setNames(c("Type","Cells"))
+
+
+HTOHeatmap(h,assay="HTO") & theme_minimal()
+
+
+h$sample <- h$HTO_maxID
+h$sample <- h$HTO_maxID
+obj <- subset(h,subset=HTO_classification.global=="Singlet" & sample != "TS-A-0301")
+
+obj$tissue <- dplyr::recode(obj$sample,`TS-A-0303`="Liver",`TS-A-0302`="Aorta")
+Idents(obj) <- obj$tissue
+obj
+
+head(obj[[]])
+table(obj$sample,obj$tissue)
 Idents(obj) <- obj$tissue
 
 
@@ -23,11 +69,11 @@ VlnPlot(obj, features = c("nCount_RNA", "nFeature_RNA", "percent_mito", "percent
         axis.text.x=element_text(angle=45, hjust=1))
 
 
-Violin plots showing distribution of UMIs (RNA counts), number of genes detected, percentage of mitochondrial reads and percentage of ribosomal reads.
+#Violin plots showing distribution of UMIs (RNA counts), number of genes detected, percentage of mitochondrial reads and percentage of ribosomal reads.
 
 ### Cell cycle
 
-Cell cycle phase is estimated using Seurat.
+#Cell cycle phase is estimated using Seurat.
 
 
 obj <- CellCycleScoring(obj, s.features=stringr::str_to_title(cc.genes$s.genes),
@@ -37,7 +83,7 @@ obj$cc_diff <- obj$S.Score-obj$G2M.Score
 table(obj$tissue, obj$Phase)
 
 
-Number of cells in various phases of cell cycle.
+#Number of cells in various phases of cell cycle.
 
 ## Filtering
 
@@ -51,7 +97,7 @@ obj <- subset(obj,features = setdiff(rownames(obj),"Gm42418"))
 obj <- NormalizeData(obj, verbose=FALSE, assay="RNA", normalization.method="LogNormalize")
 obj <- FindVariableFeatures(obj, selection.method="vst", nfeatures=2000)
 obj <- ScaleData(obj, verbose=FALSE, assay="RNA", vars.to.regress="nCount_RNA")
-```
+
 
 ## Dimensionality reduction
 
@@ -76,14 +122,14 @@ patchwork::wrap_plots(p1,p2,p3,p4,p5,nrow=2,ncol=3) &
 obj <- FindNeighbors(obj, reduction = "pca", dims = 1:20, k.param = 10)
 obj <- FindClusters(obj, resolution = 0.7)
 UMAPPlot(obj)
-SaveH5Seurat(obj, filename = "liver.h5Seurat")
-Convert("liver.h5Seurat", dest = "h5ad")
+SaveH5Seurat(obj, filename = "seurat-liver-filtered-aorta-clustered.h5Seurat")
+Convert("seurat-liver-filtered-aorta-clustered.h5Seurat", dest = "h5ad")
 rm(list = ls())
 
 #Identify cell clusters
 
-Convert("liver.h5ad", ".h5seurat")
-liver <- LoadH5Seurat("liver.h5Seurat")
+Convert("seurat-liver-filtered-aorta-clustered.h5ad", ".h5seurat")
+liver <- LoadH5Seurat("seurat-liver-filtered-aorta-clustered.h5Seurat")
 DimPlot(liver)
 
 DotPlot(liver,features = c('Apob','Alb','Mat1a','Cps1','Adgre1',
