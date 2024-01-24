@@ -5,21 +5,20 @@ library(ggplot2)
 library(patchwork)
 library(writexl)
 
+setwd('')
+
 ## Read RAW data
-ge <- Read10X_h5(file.path("raw_feature_bc_matrix.GE.h5"))
-ac <- Read10X_h5(file.path("raw_feature_bc_matrix.HTO.h5"))$`Antibody Capture`
+ge <- Read10X_h5(file.path("filtered_feature_bc_matrix.h5"))$`Gene Expression`
+ac <- Read10X_h5(file.path("filtered_feature_bc_matrix.h5"))$`Antibody Capture`
 
 dim(ge)
 dim(ac)
 
 
-ac <- ac[rowSums(ac>1)>1,colSums(ac>1)>1]
-ge <- ge[rowSums(ge>1)>1,colSums(ge>1)>1]
-
 cb <- intersect(colnames(ge), colnames(ac))
 ge <- ge[,cb]
 ac <- ac[,cb]
-
+dim(ge)
 
 h <- CreateSeuratObject(counts=ge) %>%
   NormalizeData() %>%
@@ -31,6 +30,9 @@ h <- NormalizeData(h,assay="HTO",normalization.method="CLR")
 h <- HTODemux(h,assay="HTO",positive.quantile=0.99)
 Idents(h) <- "HTO_maxID"
 saveRDS(h,"seurat-hashed.rds")
+
+as.data.frame(table(h$HTO_maxID)) %>%
+  setNames(c("Hashtag","Cells"))
 
 
 as.data.frame(table(h$HTO_maxID)) %>%
@@ -44,7 +46,6 @@ as.data.frame(table(h$HTO_classification.global)) %>%
 HTOHeatmap(h,assay="HTO") & theme_minimal()
 
 
-h$sample <- h$HTO_maxID
 h$sample <- h$HTO_maxID
 obj <- subset(h,subset=HTO_classification.global=="Singlet" & sample != "TS-A-0301")
 
@@ -120,7 +121,7 @@ patchwork::wrap_plots(p1,p2,p3,p4,p5,nrow=2,ncol=3) &
 
 
 obj <- FindNeighbors(obj, reduction = "pca", dims = 1:20, k.param = 10)
-obj <- FindClusters(obj, resolution = 0.7)
+obj <- FindClusters(obj, resolution = 0.25)
 UMAPPlot(obj)
 SaveH5Seurat(obj, filename = "seurat-liver-filtered-aorta-clustered.h5Seurat")
 Convert("seurat-liver-filtered-aorta-clustered.h5Seurat", dest = "h5ad")
